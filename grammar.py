@@ -28,6 +28,7 @@ import os
 import random
 import re
 import struct
+from collections import defaultdict
 
 _INT_RANGES = {
     'int': [-2147483648, 2147483647],
@@ -101,6 +102,7 @@ class Grammar(object):
         self._nonrecursivecreator_cdfs = {}
 
         self._var_format = 'var%05d'
+        self._var_decl_format = '/* newvar{%(name)s:%(type)s} */ var %(name)s'
 
         self._definitions_dir = '.'
 
@@ -153,12 +155,24 @@ class Grammar(object):
 
         self._command_handlers = {
             'varformat': self._set_variable_format,
+            'vardeclformat': self._set_variable_declaration_format,
             'include': self._include_from_file,
             'import': self._import_grammar,
             'lineguard': self._set_line_guard,
             'max_recursion': self._set_recursion_depth,
             'var_reuse_prob': self._set_var_reuse_probability,
             'extends': self._set_extends
+        }
+
+    def _new_context(self, last_var=0):
+        return {
+            'lastvar': last_var,
+            'lastvar_info': None,
+            'lines': [],
+            'variables': {},
+            'interesting_lines': [],
+            'force_var_reuse': False,
+            'add_additional_lines': False,
         }
 
     def _string_to_int(self, s):
@@ -269,18 +283,12 @@ class Grammar(object):
     def _generate_code(self, num_lines, initial_variables=[], last_var=0):
         """Generates a given number of lines of code."""
 
-        context = {
-            'lastvar': last_var,
-            'lines': [],
-            'variables': {},
-            'interesting_lines': [],
-            'force_var_reuse': False
-        }
+        context = self._new_context(last_var=last_var)
 
+        self._add_variable('window', 'Window', context)
+        self._add_variable('document', 'Document', context)
         for v in initial_variables:
             self._add_variable(v['name'], v['type'], context)
-        self._add_variable('document', 'Document', context)
-        self._add_variable('window', 'Window', context)
 
         while len(context['lines']) < num_lines:
             tmp_context = context.copy()
@@ -472,11 +480,16 @@ class Grammar(object):
                 context['lastvar'] += 1
                 var_name = self._var_format % context['lastvar']
                 new_vars.append({'name': var_name, 'type': var_type})
+                context['lastvar_info'] = dict(name=var_name, type=var_type)
                 # print var_name
                 # print context['lastvar']
                 if var_type == symbol:
                     ret_vars.append(var_name)
-                expanded = '/* newvar{' + var_name + ':' + var_type + '} */ var ' + var_name
+
+                args = defaultdict(lambda: '')
+                args['name'] = var_name
+                args['type'] = var_type
+                expanded = self._var_decl_format % args
             elif part['tagname'] in self._constant_types:
                 expanded = self._constant_types[part['tagname']]
             elif part['tagname'] in self._built_in_types:
@@ -527,7 +540,8 @@ class Grammar(object):
         for v in new_vars:
             if v['type'] not in _NONINTERESTING_TYPES:
                 self._add_variable(v['name'], v['type'], context)
-                additional_lines.append("if (!" + v['name'] + ") { " + v['name'] + " = GetVariable(fuzzervars, '" + v['type'] + "'); } else { " + self._get_variable_setters(v['name'], v['type']) + " }")
+                if context['add_additional_lines']:
+                    additional_lines.append("if (!" + v['name'] + ") { " + v['name'] + " = GetVariable(fuzzervars, '" + v['type'] + "'); } else { " + self._get_variable_setters(v['name'], v['type']) + " }")
 
         # Return the result.
         # In case of 'ordinary' grammar rules, return the filled rule.
@@ -547,12 +561,7 @@ class Grammar(object):
     def generate_root(self):
         """Expands root symbol."""
         if self._root:
-            context = {
-                'lastvar': 0,
-                'lines': [],
-                'variables': {},
-                'force_var_reuse': False
-            }
+            context = self._new_context()
             return self._generate(self._root, context, 0)
         else:
             print('Error: No root element defined.')
@@ -560,12 +569,7 @@ class Grammar(object):
 
     def generate_symbol(self, name):
         """Expands a symbol whose name is given as an argument."""
-        context = {
-            'lastvar': 0,
-            'lines': [],
-            'variables': {},
-            'force_var_reuse': False
-        }
+        context = self._new_context()
         return self._generate(name, context, 0)
 
     def _get_cdf(self, symbol, creators):
@@ -812,6 +816,11 @@ class Grammar(object):
     def _set_variable_format(self, var_format):
         """Sets variable format for programming language generation."""
         self._var_format = var_format.strip()
+        return 0
+
+    def _set_variable_declaration_format(self, var_decl_format):
+        """Sets variable declaration format for programming language generation."""
+        self._var_decl_format = var_decl_format.strip()
         return 0
 
     def _set_line_guard(self, lineguard):

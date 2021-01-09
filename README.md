@@ -17,6 +17,15 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+
+This forks makes the following extensions:
+- Adds a `!vardeclformat` specifier which can be used to specify the format of variable declarations:
+    Example: `!vardeclformat let %(name)s : %(type)s`
+- Adds a `lastvar_info` field to the accessible context in functions:
+    `context['lastvar_info'] = { 'name': <last_generated_name>, 'type': <tag_used_for_creation> }`
+- Adds a `add_additional_lines` field to the accessable context in functions to temporarly disable the creation of additional lines
+- Propably dropped some older python version support along the way. Sorry.
+
 #### Usage
 
 To generate a single .html sample run:
@@ -267,4 +276,3 @@ Some of the bugs that have been found with Domato:
 #### Disclaimer
 
 This is not an official Google product.
-
